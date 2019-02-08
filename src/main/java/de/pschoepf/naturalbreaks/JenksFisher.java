@@ -1,88 +1,82 @@
 /*
-* Port of Jenks/Fisher breaks originally created in C by Maarten Hilferink.
-*
-* Copyright (C) {2015}  {Philipp Schoepf}
-*
-*    This program is free software: you can redistribute it and/or modify
-*    it under the terms of the GNU General Public License as published by
-*    the Free Software Foundation, either version 3 of the License, or
-*    (at your option) any later version.
-*
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU General Public License for more details.
-*
-*    You should have received a copy of the GNU General Public License
-*    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-**/
+ * Port of Jenks/Fisher breaks originally created in C by Maarten Hilferink.
+ *
+ * Copyright (C) {2015}  {Philipp Schoepf}
+ *
+ *    This program is free software: you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation, either version 3 of the License, or
+ *    (at your option) any later version.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ *    You should have received a copy of the GNU General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ **/
 package de.pschoepf.naturalbreaks;
 
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.math3.stat.descriptive.moment.Variance;
+
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- *
  * Basic port of original C code from Maarten Hilferink.
  * All credits this fantastic work go to him for.
- *
- *
  *
  * @author Philipp Schöpf
  */
 public class JenksFisher {
 
     private List<ValueCountPair> cumulValues;
-    private int numValues = 0;
-    private int numBreaks = 0;
-    private int bufferSize = 0;
+    private int numValues;
+    private int numBreaks;
+    private int bufferSize;
     private double[] previousSSM;
     private double[] currentSSM;
     private int[] classBreaks;
-    private int classBreaksIndex = 0;
-    private int completedRows = 0;
+    private int classBreaksIndex;
+    private int completedRows;
 
     /**
      * Constructor that initializes main variables used in fisher calculation of natural breaks.
      *
      * @param vcpc Ordered list of pairs of values to occurrence counts.
-     * @param k Number of breaks to find.
+     * @param k    Number of breaks to find.
      */
-    public JenksFisher(List<ValueCountPair> vcpc, int k) {
-        this.cumulValues = new ArrayList<>();
-        this.numValues = vcpc.size();
-        this.numBreaks = k;
-        this.bufferSize = (vcpc.size() - (k - 1));
-        this.previousSSM = new double[this.bufferSize];
-        this.currentSSM = new double[this.bufferSize];
-        this.classBreaks = new int[this.bufferSize * (this.numBreaks - 1)];
-        this.classBreaksIndex = 0;
-        this.completedRows = 0;
+    private JenksFisher(final int k, List<ValueCountPair> vcpc) {
+        cumulValues = new ArrayList<>();
+        numValues = vcpc.size();
+        numBreaks = k;
+        bufferSize = (vcpc.size() - (k - 1));
+        previousSSM = new double[bufferSize];
+        currentSSM = new double[bufferSize];
+        classBreaks = new int[bufferSize * (numBreaks - 1)];
+        classBreaksIndex = 0;
+        completedRows = 0;
         double cwv = 0.0;
-        int cw = 0, w = 0;
+        long cw = 0;
 
         ValueCountPair currPair;
 
-        for (int i = 0; i != this.numValues; ++i) {
+        for (int i = 0; i != numValues; ++i) {
             currPair = vcpc.get(i);
             assert (i == 0 || currPair.getValue() >= vcpc.get(i - 1).getValue()); // PRECONDITION: the value sequence must be strictly increasing
-
-            w = currPair.getCount();
-            assert (w > 0); // PRECONDITION: all weights must be positive
-
-            cw += w;
-            assert (cw >= w); // No overflow? No loss of precision?
-
+            long w = currPair.getCount();
+            cw = Math.addExact(cw, w);
             cwv += w * currPair.getValue();
-            this.cumulValues.add(new ValueCountPair(cwv, cw));
-            if (i < this.bufferSize) {
-                this.previousSSM[i] = cwv * cwv / cw; // prepare sum of squared means for first class. Last (k-1) values are omitted
+            cumulValues.add(new ValueCountPair(cwv, cw));
+            if (i < bufferSize) {
+                previousSSM[i] = cwv * cwv / cw; // prepare sum of squared means for first class. Last (k-1) values are omitted
             }
         }
-
     }
 
     /**
@@ -92,13 +86,13 @@ public class JenksFisher {
      * @param e index of end element
      * @return sum of weights.
      */
-    private int getSumOfWeights(int b, int e) {
+    private long getSumOfWeights(int b, int e) {
         assert (b != 0);    // First element always belongs to class 0, thus queries should never include it.
         assert (b <= e);
-        assert (e < this.numValues);
+        assert (e < numValues);
 
-        int res = this.cumulValues.get(e).getCount();
-        res -= this.cumulValues.get(b - 1).getCount();
+        long res = cumulValues.get(e).getCount();
+        res -= cumulValues.get(b - 1).getCount();
         return res;
     }
 
@@ -112,10 +106,10 @@ public class JenksFisher {
     private double getSumOfWeightedValues(int b, int e) {
         assert (b != 0);
         assert (b <= e);
-        assert (e < this.numValues);
+        assert (e < numValues);
 
-        double res = this.cumulValues.get(e).getValue();
-        res -= this.cumulValues.get(b - 1).getValue();
+        double res = cumulValues.get(e).getValue();
+        res -= cumulValues.get(b - 1).getValue();
         return res;
     }
 
@@ -128,8 +122,8 @@ public class JenksFisher {
      * @return the sum of squared mean
      */
     private double getSSM(int b, int e) {
-        double res = this.getSumOfWeightedValues(b, e);
-        return res * res / this.getSumOfWeights(b, e);
+        double res = getSumOfWeightedValues(b, e);
+        return res * res / getSumOfWeights(b, e);
     }
 
     /**
@@ -137,30 +131,29 @@ public class JenksFisher {
      * bp+(completedRows-1) and less than ep+(completedRows-1)
      * Complexity: O(ep-bp) <= O(m) @
      *
-     * @param i startIndex
+     * @param i  startIndex
      * @param bp endindex
      * @param ep
-     *
      * @return the index
      */
     private int findMaxBreakIndex(int i, int bp, int ep) {
         assert (bp < ep);
         assert (bp <= i);
         assert (ep <= i + 1);
-        assert (i < this.bufferSize);
-        assert (ep <= this.bufferSize);
+        assert (i < bufferSize);
+        assert (ep <= bufferSize);
 
-        double minSSM = this.previousSSM[bp] + this.getSSM(bp + this.completedRows, i + this.completedRows);
+        double minSSM = previousSSM[bp] + getSSM(bp + completedRows, i + completedRows);
         int foundP = bp;
         while (++bp < ep) {
-            double currSSM = this.previousSSM[bp] + this.getSSM(bp + this.completedRows, i + this.completedRows);
+            double currSSM = previousSSM[bp] + getSSM(bp + completedRows, i + completedRows);
             if (currSSM > minSSM) {
                 minSSM = currSSM;
 
                 foundP = bp;
             }
         }
-        this.currentSSM[i] = minSSM;
+        currentSSM[i] = minSSM;
         return foundP;
     }
 
@@ -170,7 +163,6 @@ public class JenksFisher {
      * ep+(completedRows-1)
      * Complexity: O(log(ei-bi)*Max((ei-bi),(ep-bp)))
      * <= O(m*log(m))
-     *
      *
      * @param bi
      * @param ei
@@ -189,141 +181,152 @@ public class JenksFisher {
         }
         assert (bp < ep);
 
-        int mi = (int) Math.floor((bi + ei) / 2);
-        int mp = this.findMaxBreakIndex(mi, bp, Math.min(ep, mi + 1));
+        int mi = (bi + ei) / 2;
+        int mp = findMaxBreakIndex(mi, bp, Math.min(ep, mi + 1));
 
         assert (bp <= mp);
         assert (mp < ep);
         assert (mp <= mi);
 
         // solve first half of the sub-problems with lower 'half' of possible outcomes
-        this.calcRange(bi, mi, bp, Math.min(mi, mp + 1));
-
-        this.classBreaks[this.classBreaksIndex + mi] = mp; // store result for the middle element.
-
+        calcRange(bi, mi, bp, Math.min(mi, mp + 1));
+        classBreaks[classBreaksIndex + mi] = mp; // store result for the middle element.
         // solve second half of the sub-problems with upper 'half' of possible outcomes
-        this.calcRange(mi + 1, ei, mp, ep);
+        calcRange(mi + 1, ei, mp, ep);
     }
-    
+
     /**
      * Swaps the content of the two lists with each other.
      */
     private void swapArrays() {
-        double[] temp = new double[previousSSM.length];
-        System.arraycopy(previousSSM, 0, temp, 0, previousSSM.length);
-        
-        previousSSM = new double[currentSSM.length];
-        System.arraycopy(currentSSM, 0, previousSSM, 0, currentSSM.length);
-       
-        currentSSM = new double[temp.length];
-        System.arraycopy(temp, 0, currentSSM, 0, temp.length);
+        double[] temp = previousSSM;
+        previousSSM = currentSSM;
+        currentSSM = temp;
     }
 
     /**
      * Starting point of calculation of breaks.
-     *
+     * <p>
      * complexity: O(m*log(m)*k)
      */
     private void calcAll() {
-        if (this.numBreaks >= 2) {
-            this.classBreaksIndex = 0;
-            for (this.completedRows = 1; this.completedRows < this.numBreaks - 1; ++this.completedRows) {
-                this.calcRange(0, this.bufferSize, 0, this.bufferSize); // complexity: O(m*log(m))
-                
+        if (numBreaks >= 2) {
+            classBreaksIndex = 0;
+            for (completedRows = 1; completedRows < numBreaks - 1; ++completedRows) {
+                calcRange(0, bufferSize, 0, bufferSize); // complexity: O(m*log(m))
                 swapArrays();
-                this.classBreaksIndex += this.bufferSize;
+                classBreaksIndex += bufferSize;
             }
         }
     }
-    
+
+    @RequiredArgsConstructor
+    @Data
+    private static class ClassifierAndBreaks {
+        private final int[] breaksIndices;
+        private final JenksFisher jf;
+    }
+
     /**
-     *  Does the internal processing to actually create the breaks.
-     *
-     * @param k number of breaks
-     * @param vcpc asc ordered input of values and their occurence counts.
+     * Does the internal processing to actually create the breaks.
      */
-    public static double[] classifyJenksFisherFromValueCountPairs(int k, List<ValueCountPair> vcpc){
-        double[] breaksArray = new double[k];
+    public static double[] classifyJenksFisherFromValueCountPairs(int k, List<ValueCountPair> vcpc) {
+        return Arrays.stream(calculateBreaks(k, vcpc).breaksIndices)
+                .mapToDouble(i -> vcpc.get(i).getValue())
+                .toArray();
+    }
+
+    private static ClassifierAndBreaks calculateBreaks(int k, List<ValueCountPair> vcpc) {
+        int[] breaksArray = new int[k];
         int m = vcpc.size();
-        assert(k <= m); // PRECONDITION
-        if (k==0)
-            return breaksArray;
-        JenksFisher jf = new JenksFisher(vcpc, k);
+        assert (k <= m); // PRECONDITION
+        if (k == 0)
+            return new ClassifierAndBreaks(breaksArray, null);
+        final JenksFisher jf = new JenksFisher(k, vcpc);
         if (k > 1) {
             // runs the actual calculation
             jf.calcAll();
             int lastClassBreakIndex = jf.findMaxBreakIndex(jf.bufferSize - 1, 0, jf.bufferSize);
-            while (--k!=0) {
+            while (--k != 0) {
                 // assign the break values to the result
-                breaksArray[k]= vcpc.get(lastClassBreakIndex + k).getValue();
-                assert(lastClassBreakIndex < jf.bufferSize);
-                if (k > 1)
-                {
+                breaksArray[k] = lastClassBreakIndex + k;
+                assert (lastClassBreakIndex < jf.bufferSize);
+                if (k > 1) {
                     jf.classBreaksIndex -= jf.bufferSize;
                     lastClassBreakIndex = jf.classBreaks[jf.classBreaksIndex + lastClassBreakIndex];
                 }
             }
-            assert(jf.classBreaks[jf.classBreaksIndex] ==jf.classBreaks[0]);
+            assert (jf.classBreaks[jf.classBreaksIndex] == jf.classBreaks[0]);
         }
-        assert(k == 0);
-        breaksArray[0] = vcpc.get(0).getValue(); // break for the first class is the minimum of the dataset.
-        return breaksArray;
+        assert (k == 0);
+        breaksArray[0] = 0; // break for the first class is the minimum of the dataset.
+        return new ClassifierAndBreaks(breaksArray, jf);
     }
 
     /**
      * Main entry point for creation of Jenks-Fisher natural breaks.
      *
      * @param values array of the values, do not need to be sorted.
-     * @param k number of breaks to create
+     * @param k      number of breaks to create
      * @return Array with breaks
      */
-    public static List<Double> createJenksFisherBreaksArray(List<Double> values, int k){
-        List<ValueCountPair>sortedUniqueValueCounts = getValueCountPairs(values);
-        
-        double[] breaksArray = null;
-        if (sortedUniqueValueCounts.size()>k){
-            breaksArray = classifyJenksFisherFromValueCountPairs(k, sortedUniqueValueCounts);
-        }   
-        else {
-           int i=0;
-            for (ValueCountPair vcp : sortedUniqueValueCounts) {
-                breaksArray[i] = vcp.getValue();
-                i++;
-            }
-
-        }
-        List<Double> result = new ArrayList<>(breaksArray.length);
-        for(double d:breaksArray) result.add(d);
-        return result;
+    static List<Double> createJenksFisherBreaksArray(List<Double> values, int k) {
+        List<ValueCountPair> sortedUniqueValueCounts = getValueCountPairs(values);
+        return sortedUniqueValueCounts.size() > k ?
+                Arrays.stream(classifyJenksFisherFromValueCountPairs(k, sortedUniqueValueCounts))
+                        .boxed()
+                        .collect(Collectors.toList()) :
+                sortedUniqueValueCounts.stream().mapToDouble(ValueCountPair::getValue)
+                        .boxed()
+                        .collect(Collectors.toList());
     }
 
     /**
-     * Calculates the occurence count of given values and returns them.
+     * Calculates the occurrence count of given values and returns them.
      *
      * @param values
      * @return Occurences of values.
      */
-    private static List<ValueCountPair> getValueCountPairs(List<Double> values) {
-        List<ValueCountPair> result = new ArrayList<>();
-        HashMap<Double,ValueCountPair> vcpMap = new HashMap<>();
-        for (double value : values) {
-            if (!vcpMap.containsKey(value)) {
-                ValueCountPair vcp = new ValueCountPair(value, 1);
-                vcpMap.put(value, vcp);
-                result.add(vcp);
-            } else {
-                vcpMap.get(value).incCount();
-            }   
-        }
-        Collections.sort(result, new Comparator<ValueCountPair>(){
-            @Override
-            public int compare(ValueCountPair o1, ValueCountPair o2) {
-                return Double.compare(o1.getValue(),o2.getValue());
-            }
-            
-        });
-        return result;
+    public static List<ValueCountPair> getValueCountPairs(List<Double> values) {
+        return values
+                .stream()
+                .collect(Collectors.groupingBy(v->v, Collectors.counting()))
+                .entrySet()
+                .stream()
+                .map(e->new ValueCountPair(e.getKey(), e.getValue()))
+                .sorted()
+                .collect(Collectors.toList());
     }
 
-    
+    /**
+     * Returns an ordered list of clusters based on break values, each with a pre-calculated variance value, size(items per cluster) and center
+     *
+     * @param k    number of breaks
+     * @param vcpc asc ordered input of values and their occurence counts.
+     * @return the ordered clusters
+     */
+    public static List<Cluster> classifyJenksFisherClustersFromValueCountPairs(final int k, List<ValueCountPair> vcpc) {
+        ClassifierAndBreaks classifierAndBreaks = calculateBreaks(k, vcpc);
+        final JenksFisher jf = classifierAndBreaks.jf;
+        List<Cluster> result = new ArrayList<>(k);
+        int[] breakIndices = classifierAndBreaks.breaksIndices;
+        ValueCountPair lower = null;
+        for (int i = 0; i < k; ++i) {
+            ValueCountPair upper = jf.cumulValues.get(i == k - 1 ? jf.cumulValues.size() - 1 : breakIndices[i + 1] - 1);
+            double deltaValue = lower == null ? upper.getValue() : upper.getValue() - lower.getValue();
+            long deltaCount = lower == null ? upper.getCount() : upper.getCount() - lower.getCount();
+            double center = deltaValue / deltaCount;
+
+            // Calculate variance
+            final int vcpcStartIndex = breakIndices[i];
+            final int vcpcEndIndex = (i == k - 1) ? vcpc.size() : breakIndices[i + 1];
+            List<ValueCountPair> subList = vcpc.subList(vcpcStartIndex, vcpcEndIndex);
+            double variance = new Variance().evaluate(subList.stream()
+                            .mapToDouble(v -> Math.abs(v.getValue() - center)).toArray(),
+                    subList.stream().mapToDouble(ValueCountPair::getCount).toArray());
+            result.add(new Cluster(center, variance, deltaCount));
+            lower = upper;
+        }
+        return result;
+    }
 }
